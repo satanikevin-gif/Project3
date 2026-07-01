@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Management - MediFlow Admin</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="dashboard.html" class="navbar-brand">
+      <span class="brand-icon">+</span> MediFlow Admin
+    </a>
+    <div class="nav-links">
+      <a href="dashboard.html">Dashboard</a>
+      <a href="orders.html">Orders</a>
+      <a href="stock.html">Stock</a>
+      <a href="alerts.html">Alerts</a>
+      <a href="suppliers.html">Suppliers</a>
+      <a href="#" onclick="api.logout()">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container" style="padding-top:24px">
+    <div class="flex-between mb-3">
+      <h2>Inventory</h2>
+      <button class="btn btn-primary" onclick="showAddModal()">+ Add Medicine</button>
+    </div>
+
+    <div class="search-bar">
+      <input type="text" id="searchInput" class="form-control" placeholder="Search medicines..." oninput="debounceSearch()">
+      <select id="categoryFilter" class="form-control" onchange="loadMedicines()">
+        <option value="">All Categories</option>
+        <option value="tablets">Tablets</option><option value="syrup">Syrup</option>
+        <option value="injection">Injection</option><option value="topical">Topical</option>
+        <option value="drops">Drops</option><option value="inhaler">Inhaler</option><option value="other">Other</option>
+      </select>
+      <select id="expiryFilter" class="form-control" onchange="loadMedicines()">
+        <option value="">All Expiry</option>
+        <option value="active">Active</option>
+        <option value="expiring">Expiring Soon</option>
+        <option value="expired">Expired</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap">
+        <input type="checkbox" id="lowStockOnly" onchange="loadMedicines()"> Low Stock
+      </label>
+    </div>
+
+    <div id="loadingState" class="loading-state"><div class="spinner"></div><p>Loading stock...</p></div>
+    <div id="emptyState" class="empty-state hidden"><h3>No medicines found</h3></div>
+
+    <div class="table-wrapper">
+      <table id="stockTable" class="hidden">
+        <thead>
+          <tr><th>Name</th><th>Category</th><th>Batch</th><th>Expiry</th><th>Stock</th><th>MRP</th><th>Cost</th><th>Rack</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="stockBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="addModal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Add Medicine</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <form id="medicineForm">
+        <input type="hidden" id="editId">
+        <div class="grid grid-2 gap-1">
+          <div class="form-group"><label>Name *</label><input type="text" id="f_name" class="form-control" required></div>
+          <div class="form-group"><label>Generic Name</label><input type="text" id="f_genericName" class="form-control"></div>
+          <div class="form-group"><label>Brand</label><input type="text" id="f_brand" class="form-control"></div>
+          <div class="form-group"><label>Manufacturer</label><input type="text" id="f_manufacturer" class="form-control"></div>
+          <div class="form-group"><label>Category</label><select id="f_category" class="form-control"><option value="tablets">Tablets</option><option value="syrup">Syrup</option><option value="injection">Injection</option><option value="topical">Topical</option><option value="drops">Drops</option><option value="inhaler">Inhaler</option><option value="other">Other</option></select></div>
+          <div class="form-group"><label>Batch No *</label><input type="text" id="f_batchNo" class="form-control" required></div>
+          <div class="form-group"><label>Mfg Date *</label><input type="date" id="f_mfgDate" class="form-control" required></div>
+          <div class="form-group"><label>Expiry Date *</label><input type="date" id="f_expiryDate" class="form-control" required></div>
+          <div class="form-group"><label>Unit</label><select id="f_unit" class="form-control"><option value="strip">Strip</option><option value="tablet">Tablet</option><option value="capsule">Capsule</option><option value="ml">ML</option><option value="mg">MG</option><option value="g">G</option><option value="bottle">Bottle</option><option value="tube">Tube</option></select></div>
+          <div class="form-group"><label>Pack Size</label><input type="number" id="f_packSize" class="form-control" value="1"></div>
+          <div class="form-group"><label>MRP *</label><input type="number" step="0.01" id="f_mrp" class="form-control" required></div>
+          <div class="form-group"><label>Purchase Price *</label><input type="number" step="0.01" id="f_purchasePrice" class="form-control" required></div>
+          <div class="form-group"><label>Stock *</label><input type="number" id="f_stock" class="form-control" required></div>
+          <div class="form-group"><label>Reorder Threshold</label><input type="number" id="f_reorderThreshold" class="form-control" value="10"></div>
+          <div class="form-group"><label>Rack Location</label><input type="text" id="f_rackLocation" class="form-control"></div>
+          <div class="form-group"><label>GST Slab</label><select id="f_gstSlab" class="form-control"><option value="0">0%</option><option value="5">5%</option><option value="12" selected>12%</option><option value="18">18%</option></select></div>
+          <div class="form-group"><label>Barcode ID</label><input type="text" id="f_barcodeId" class="form-control"></div>
+        </div>
+        <div class="flex gap-1 mt-2">
+          <button type="submit" class="btn btn-primary" id="submitBtn">Save</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    if (!api.isLoggedIn()) {
+      const current = encodeURIComponent('/pages/admin/stock.html');
+      window.location.href = '/pages/customer/login.html?redirect=' + current;
+    } else if (!api.isAdmin()) {
+      window.location.href = '/pages/customer/shop.html';
+    }
+
+    let searchTimer;
+    function debounceSearch() { clearTimeout(searchTimer); searchTimer = setTimeout(loadMedicines, 400); }
+
+    let lowStockIds = new Set();
+    let expiringIds = new Set();
+
+    async function loadMedicines() {
+      document.getElementById('loadingState').classList.remove('hidden');
+      document.getElementById('emptyState').classList.add('hidden');
+      document.getElementById('stockTable').classList.add('hidden');
+
+      try {
+        const params = {
+          search: document.getElementById('searchInput').value,
+          category: document.getElementById('categoryFilter').value,
+          expiryStatus: document.getElementById('expiryFilter').value,
+          lowStock: document.getElementById('lowStockOnly').checked ? 'true' : '',
+          limit: 100
+        };
+
+        const [data, lowStockData, expiringData] = await Promise.all([
+          api.get('/api/medicines', params),
+          api.get('/api/medicines/low-stock').catch(() => ({})),
+          api.get('/api/medicines/expiring').catch(() => ([]))
+        ]);
+
+        lowStockIds = new Set((lowStockData.medicines || lowStockData)?.map?.(m => m._id) || []);
+        expiringIds = new Set((expiringData || []).map(m => m._id));
+
+        document.getElementById('loadingState').classList.add('hidden');
+
+        if (data.medicines.length === 0) {
+          document.getElementById('emptyState').classList.remove('hidden');
+          return;
+        }
+
+        document.getElementById('stockTable').classList.remove('hidden');
+        document.getElementById('stockBody').innerHTML = data.medicines.map(m => {
+          const isLow = lowStockIds.has(m._id);
+          const isExpiring = expiringIds.has(m._id);
+          const rowClass = isLow ? 'style="background:#FEF3C7"' : isExpiring ? 'style="background:#FFF3E0"' : '';
+          const expiryDate = new Date(m.expiryDate).toLocaleDateString('en-IN');
+          const now = new Date();
+          const expired = new Date(m.expiryDate) < now;
+          return `<tr ${rowClass}>
+            <td><strong>${m.name}</strong><br><span class="text-muted" style="font-size:12px">${m.brand || ''}</span></td>
+            <td>${m.category}</td>
+            <td>${m.batchNo}</td>
+            <td style="color:${expired ? 'var(--red)' : ''}">${expiryDate}${expired ? ' ⚠' : ''}</td>
+            <td><strong style="color:${isLow ? 'var(--amber)' : 'var(--primary)'}">${m.stock}</strong>${isLow ? ' ⚠' : ''}</td>
+            <td>Rs. ${m.mrp}</td>
+            <td>Rs. ${m.purchasePrice}</td>
+            <td>${m.rackLocation || '-'}</td>
+            <td>
+              <button class="btn btn-secondary btn-sm" onclick="editMedicine('${m._id}')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteMedicine('${m._id}')">Del</button>
+            </td>
+          </tr>`;
+        }).join('');
+      } catch (err) {
+        document.getElementById('loadingState').classList.add('hidden');
+        document.getElementById('stockBody').innerHTML = `<tr><td colspan="9" class="text-center">Error: ${err.message}</td></tr>`;
+        document.getElementById('stockTable').classList.remove('hidden');
+      }
+    }
+
+    function showAddModal() {
+      document.getElementById('modalTitle').textContent = 'Add Medicine';
+      document.getElementById('medicineForm').reset();
+      document.getElementById('editId').value = '';
+      document.getElementById('submitBtn').textContent = 'Save';
+      document.getElementById('addModal').classList.remove('hidden');
+    }
+
+    async function editMedicine(id) {
+      try {
+        const m = await api.get(`/api/medicines/${id}`);
+        document.getElementById('modalTitle').textContent = 'Edit Medicine';
+        document.getElementById('editId').value = id;
+        ['name','genericName','brand','manufacturer','category','batchNo','unit','packSize','mrp','purchasePrice','stock','reorderThreshold','rackLocation','gstSlab','barcodeId'].forEach(f => {
+          const el = document.getElementById('f_' + f);
+          if (el) el.value = m[f] !== undefined ? m[f] : '';
+        });
+        if (m.mfgDate) document.getElementById('f_mfgDate').value = m.mfgDate.split('T')[0];
+        if (m.expiryDate) document.getElementById('f_expiryDate').value = m.expiryDate.split('T')[0];
+        document.getElementById('submitBtn').textContent = 'Update';
+        document.getElementById('addModal').classList.remove('hidden');
+      } catch (err) { alert(err.message); }
+    }
+
+    function closeModal() {
+      document.getElementById('addModal').classList.add('hidden');
+    }
+
+    document.getElementById('medicineForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('editId').value;
+      const data = {};
+      ['name','genericName','brand','manufacturer','category','batchNo','unit','packSize','mrp','purchasePrice','stock','reorderThreshold','rackLocation','gstSlab','barcodeId'].forEach(f => {
+        const el = document.getElementById('f_' + f);
+        if (el) data[f] = el.value;
+      });
+      data.mfgDate = document.getElementById('f_mfgDate').value;
+      data.expiryDate = document.getElementById('f_expiryDate').value;
+      data.packSize = parseInt(data.packSize) || 1;
+      data.mrp = parseFloat(data.mrp);
+      data.purchasePrice = parseFloat(data.purchasePrice);
+      data.stock = parseInt(data.stock);
+      data.reorderThreshold = parseInt(data.reorderThreshold) || 10;
+      data.gstSlab = parseInt(data.gstSlab) || 12;
+
+      try {
+        if (id) {
+          await api.put(`/api/medicines/${id}`, data);
+        } else {
+          await api.post('/api/medicines', data);
+        }
+        closeModal();
+        loadMedicines();
+      } catch (err) { alert(err.message); }
+    });
+
+    async function deleteMedicine(id) {
+      if (!confirm('Deactivate this medicine?')) return;
+      try {
+        await api.del(`/api/medicines/${id}`);
+        loadMedicines();
+      } catch (err) { alert(err.message); }
+    }
+
+    loadMedicines();
+  </script>
+</body>
+</html>

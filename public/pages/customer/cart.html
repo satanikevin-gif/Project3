@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cart - MediFlow</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="shop.html" class="navbar-brand">
+      <span class="brand-icon">+</span> MediFlow
+    </a>
+    <div class="nav-links">
+      <a href="shop.html">Shop</a>
+      <a href="cart.html" class="cart-badge">
+        Cart <span class="cart-count">0</span>
+      </a>
+      <a href="my-orders.html">Orders</a>
+      <a href="#" onclick="api.logout()">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container" style="padding-top:24px">
+    <div class="flex-between mb-3">
+      <h2>Your Cart</h2>
+      <button class="btn btn-secondary btn-sm" onclick="Cart.clear(); renderCart();">Clear Cart</button>
+    </div>
+
+    <div id="loadingState" class="loading-state">
+      <div class="spinner"></div>
+    </div>
+    <div id="emptyState" class="empty-state hidden">
+      <h3>Your cart is empty</h3>
+      <p>Browse medicines and add what you need.</p>
+      <a href="shop.html" class="btn btn-primary">Browse Medicines</a>
+    </div>
+
+    <div id="cartContent" class="hidden">
+      <div class="card mb-3">
+        <table>
+          <thead>
+            <tr><th>Item</th><th>Qty</th><th>MRP</th><th>Total</th><th></th></tr>
+          </thead>
+          <tbody id="cartItems"></tbody>
+        </table>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3 class="mb-2">Delivery Address</h3>
+          <div class="form-group">
+            <label>Street</label>
+            <input type="text" id="street" class="form-control" placeholder="Street address">
+          </div>
+          <div class="grid grid-2 gap-1">
+            <div class="form-group">
+              <label>City</label>
+              <input type="text" id="city" class="form-control" placeholder="City">
+            </div>
+            <div class="form-group">
+              <label>State</label>
+              <input type="text" id="state" class="form-control" placeholder="State">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Pincode</label>
+            <input type="text" id="pincode" class="form-control" placeholder="Pincode">
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="mb-2">Order Summary</h3>
+          <div class="flex-between mb-1"><span>Items:</span><span id="summaryItems">0</span></div>
+          <div class="flex-between mb-1"><span>Subtotal:</span><span id="summarySubtotal">Rs. 0</span></div>
+          <div class="form-group mt-2">
+            <label>Loyalty Points (balance: <span id="loyaltyBalance">0</span>)</label>
+            <input type="number" id="loyaltyInput" class="form-control" placeholder="Points to use (1 pt = Rs. 1)" min="0">
+          </div>
+          <div class="form-group">
+            <label>Prescription (optional)</label>
+            <input type="file" id="prescriptionInput" accept="image/*,.pdf" class="form-control">
+          </div>
+          <hr style="border-color:var(--border);margin:12px 0">
+          <div class="flex-between mb-2"><strong>Total:</strong><strong id="summaryTotal">Rs. 0</strong></div>
+          <button class="btn btn-primary btn-full" onclick="placeOrder()">Place Order</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/cart.js"></script>
+  <script>
+    if (!api.isLoggedIn()) { window.location.href = 'login.html'; return; }
+    if (api.isAdmin()) { window.location.href = '/pages/admin/dashboard.html'; return; }
+
+    async function renderCart() {
+      const items = Cart.getItems();
+      document.getElementById('loadingState').classList.add('hidden');
+      document.getElementById('emptyState').classList.toggle('hidden', items.length > 0);
+      document.getElementById('cartContent').classList.toggle('hidden', items.length === 0);
+
+      const tbody = document.getElementById('cartItems');
+      let subtotal = 0;
+      tbody.innerHTML = items.map((item, i) => {
+        const total = item.mrp * item.qty;
+        subtotal += total;
+        return `<tr>
+          <td><strong>${item.name}</strong><br><span class="text-muted" style="font-size:12px">${item.brand ? item.brand + ' · ' : ''}Rs. ${item.mrp}/unit</span></td>
+          <td>
+            <input type="number" value="${item.qty}" min="1" max="${item.stock}" style="width:60px;padding:6px;border:1px solid var(--border);border-radius:4px;"
+              onchange="Cart.updateQty('${item.medicineId}', parseInt(this.value) || 0); renderCart();">
+          </td>
+          <td>Rs. ${item.mrp}</td>
+          <td>Rs. ${total.toFixed(2)}</td>
+          <td><button class="btn btn-danger btn-sm" onclick="Cart.remove('${item.medicineId}'); renderCart();">Remove</button></td>
+        </tr>`;
+      }).join('');
+
+      const count = Cart.getCount();
+      document.getElementById('summaryItems').textContent = count;
+      document.getElementById('summarySubtotal').textContent = `Rs. ${subtotal.toFixed(2)}`;
+      document.getElementById('summaryTotal').textContent = `Rs. ${subtotal.toFixed(2)}`;
+      Cart.updateBadge();
+    }
+
+    async function placeOrder() {
+      const items = Cart.getItems();
+      if (items.length === 0) return alert('Cart is empty.');
+
+      const user = api.getUser();
+      const street = document.getElementById('street').value;
+      const city = document.getElementById('city').value;
+      const state = document.getElementById('state').value;
+      const pincode = document.getElementById('pincode').value;
+      const loyaltyPts = parseInt(document.getElementById('loyaltyInput').value) || 0;
+      const prescriptionFile = document.getElementById('prescriptionInput').files[0];
+
+      if (!street || !city || !state || !pincode) {
+        return alert('Please fill in your delivery address.');
+      }
+
+      const btn = event.target;
+      btn.disabled = true; btn.textContent = 'Placing order...';
+
+      try {
+        const formData = new FormData();
+        formData.append('items', JSON.stringify(items.map(i => ({ medicineId: i.medicineId, qty: i.qty }))));
+        formData.append('deliveryAddress', JSON.stringify({ street, city, state, pincode }));
+        formData.append('loyaltyPointsToUse', loyaltyPts);
+        if (prescriptionFile) formData.append('prescription', prescriptionFile);
+
+        await api.upload('/api/customer/orders', formData);
+        Cart.clear();
+        alert('Order placed successfully!');
+        window.location.href = 'my-orders.html';
+      } catch (err) {
+        alert(err.message || 'Failed to place order');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Place Order';
+      }
+    }
+
+    renderCart();
+
+    api.get('/api/auth/profile').then(d => {
+      document.getElementById('loyaltyBalance').textContent = d.user.loyaltyPoints || 0;
+    }).catch(() => {});
+  </script>
+</body>
+</html>

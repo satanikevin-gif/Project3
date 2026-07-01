@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supplier Dashboard - MediFlow</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="dashboard.html" class="navbar-brand">
+      <span class="brand-icon">+</span> MediFlow Supplier
+    </a>
+    <div class="nav-links">
+      <a href="dashboard.html">Dashboard</a>
+      <a href="#" onclick="api.logout()">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container" style="padding-top:24px">
+    <h2 class="mb-3">My Purchase Orders</h2>
+
+    <div id="loadingState" class="loading-state"><div class="spinner"></div><p>Loading POs...</p></div>
+    <div id="emptyState" class="empty-state hidden">
+      <h3>No Purchase Orders</h3>
+      <p>You have no purchase orders yet.</p>
+    </div>
+    <div id="errorState" class="error-state hidden">
+      <h3>Failed to load</h3><p id="errorMessage"></p>
+      <button class="btn btn-secondary" onclick="loadPOs()">Retry</button>
+    </div>
+    <div id="poList"></div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    if (!api.isLoggedIn()) {
+      window.location.href = '/pages/customer/login.html';
+    } else if (api.isAdmin()) {
+      window.location.href = '/pages/admin/dashboard.html';
+    }
+
+    const statusLabels = {
+      pending: 'Pending', accepted: 'Accepted', rejected: 'Rejected',
+      dispatched: 'Dispatched', received: 'Received'
+    };
+    const statusColors = {
+      pending: 'badge-amber', accepted: 'badge-green', rejected: 'badge-red',
+      dispatched: 'badge-blue', received: 'badge-green'
+    };
+
+    async function loadPOs() {
+      document.getElementById('loadingState').classList.remove('hidden');
+      document.getElementById('emptyState').classList.add('hidden');
+      document.getElementById('errorState').classList.add('hidden');
+      document.getElementById('poList').innerHTML = '';
+
+      try {
+        const pos = await api.get('/api/suppliers/my-pos');
+        document.getElementById('loadingState').classList.add('hidden');
+
+        if (pos.length === 0) {
+          document.getElementById('emptyState').classList.remove('hidden');
+          return;
+        }
+
+        document.getElementById('poList').innerHTML = pos.map(po => `
+          <div class="card mb-2">
+            <div class="flex-between mb-2">
+              <div>
+                <strong>${po.poNumber}</strong>
+                <span class="text-muted" style="font-size:13px;margin-left:12px">${new Date(po.createdAt).toLocaleDateString('en-IN')}</span>
+              </div>
+              <span class="badge ${statusColors[po.status] || 'badge-gray'}">${statusLabels[po.status] || po.status}</span>
+            </div>
+            <table>
+              <thead><tr><th>Item</th><th>Qty</th></tr></thead>
+              <tbody>${po.items.map(i => `<tr><td>${i.medicineName}</td><td>${i.quantity}</td></tr>`).join('')}</tbody>
+            </table>
+            ${po.notes ? `<p class="mt-1 text-muted" style="font-size:13px">Notes: ${po.notes}</p>` : ''}
+            ${po.expectedDelivery ? `<p class="text-muted" style="font-size:13px">Expected Delivery: ${new Date(po.expectedDelivery).toLocaleDateString('en-IN')}</p>` : ''}
+            ${po.status === 'pending' ? `
+              <div class="flex gap-1 mt-2">
+                <button class="btn btn-success btn-sm" onclick="respondPO('${po._id}', 'accepted')">Accept</button>
+                <button class="btn btn-danger btn-sm" onclick="respondPO('${po._id}', 'rejected')">Reject</button>
+              </div>
+            ` : ''}
+          </div>
+        `).join('');
+      } catch (err) {
+        document.getElementById('loadingState').classList.add('hidden');
+        document.getElementById('errorMessage').textContent = err.message || 'Failed to load';
+        document.getElementById('errorState').classList.remove('hidden');
+      }
+    }
+
+    async function respondPO(id, status) {
+      try {
+        await api.patch(`/api/suppliers/po/${id}/respond`, { status });
+        alert('PO ' + (status === 'accepted' ? 'accepted' : 'rejected') + '!');
+        loadPOs();
+      } catch (err) {
+        alert(err.message || 'Failed to respond');
+      }
+    }
+
+    loadPOs();
+  </script>
+</body>
+</html>

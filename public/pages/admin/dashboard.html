@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - MediFlow</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="dashboard.html" class="navbar-brand">
+      <span class="brand-icon">+</span> MediFlow Admin
+    </a>
+    <div class="nav-links">
+      <a href="dashboard.html">Dashboard</a>
+      <a href="orders.html">Orders</a>
+      <a href="stock.html">Stock</a>
+      <a href="alerts.html">Alerts</a>
+      <a href="suppliers.html">Suppliers</a>
+      <a href="#" onclick="api.logout()">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container" style="padding-top:24px">
+    <h2 class="mb-3">Dashboard</h2>
+    <div id="loadingState" class="loading-state"><div class="spinner"></div><p>Loading dashboard...</p></div>
+    <div id="errorState" class="error-state hidden">
+      <h3>Failed to load</h3><p id="errorMessage"></p>
+      <button class="btn btn-secondary" onclick="loadDashboard()">Retry</button>
+    </div>
+    <div id="dashboardContent" class="hidden">
+      <div class="grid grid-4 mb-3" id="statCards"></div>
+      <div class="grid grid-2" id="analyticsGrid"></div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    if (!api.isLoggedIn()) {
+      const current = encodeURIComponent('/pages/admin/dashboard.html');
+      window.location.href = '/pages/customer/login.html?redirect=' + current;
+    } else if (!api.isAdmin()) {
+      window.location.href = '/pages/customer/shop.html';
+    }
+
+    async function loadDashboard() {
+      document.getElementById('loadingState').classList.remove('hidden');
+      document.getElementById('errorState').classList.add('hidden');
+      document.getElementById('dashboardContent').classList.add('hidden');
+
+      try {
+        const [dash, sales, inv, expiryLoss] = await Promise.all([
+          api.get('/api/analytics/dashboard'),
+          api.get('/api/analytics/sales', { from: new Date(Date.now()-30*86400000).toISOString().split('T')[0], to: new Date().toISOString().split('T')[0] }),
+          api.get('/api/analytics/inventory-value'),
+          api.get('/api/analytics/expiry-loss')
+        ]);
+
+        document.getElementById('loadingState').classList.add('hidden');
+        document.getElementById('dashboardContent').classList.remove('hidden');
+
+        document.getElementById('statCards').innerHTML = `
+          <div class="stat-card"><div class="stat-value">${dash.totalMedicines}</div><div class="stat-label">Medicines</div></div>
+          <div class="stat-card"><div class="stat-value">${dash.totalBills}</div><div class="stat-label">Bills</div></div>
+          <div class="stat-card"><div class="stat-value">${dash.totalOrders}</div><div class="stat-label">Orders</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:${dash.activeAlerts > 0 ? 'var(--amber)' : 'var(--primary)'}">${dash.activeAlerts}</div><div class="stat-label">Active Alerts</div></div>
+          <div class="stat-card"><div class="stat-value">Rs. ${(dash.totalRevenue || 0).toLocaleString()}</div><div class="stat-label">Total Revenue</div></div>
+          <div class="stat-card"><div class="stat-value">${dash.lowStockCount}</div><div class="stat-label">Low Stock Items</div></div>
+          <div class="stat-card"><div class="stat-value">Rs. ${(inv.totalMrp || 0).toLocaleString()}</div><div class="stat-label">Inventory (MRP)</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:${expiryLoss.totalLossValue > 0 ? 'var(--red)' : 'var(--primary)'}">Rs. ${(expiryLoss.totalLossValue || 0).toLocaleString()}</div><div class="stat-label">Expiry Loss</div></div>
+        `;
+
+        document.getElementById('analyticsGrid').innerHTML = `
+          <div class="card">
+            <h3 class="mb-2">Sales (30 days)</h3>
+            <div class="flex-between mb-1"><span>Revenue:</span><strong>Rs. ${(sales.totalRevenue || 0).toLocaleString()}</strong></div>
+            <div class="flex-between mb-1"><span>Bills:</span><strong>${sales.totalBills}</strong></div>
+            <div class="flex-between mb-1"><span>Avg Bill:</span><strong>Rs. ${(sales.avgBillValue || 0).toFixed(2)}</strong></div>
+            <div class="flex-between"><span>Payment Modes:</span></div>
+            ${Object.entries(sales.paymentBreakdown || {}).map(([mode, amt]) => `<div class="flex-between" style="font-size:13px;padding-left:16px"><span>${mode}:</span><span>Rs. ${(amt || 0).toFixed(2)}</span></div>`).join('')}
+          </div>
+          <div class="card">
+            <h3 class="mb-2">Expiry Loss Alert</h3>
+            ${expiryLoss.items && expiryLoss.items.length > 0 ? `
+              <p class="text-muted mb-2">${expiryLoss.items.length} expired medicines with stock.</p>
+              <table>
+                <thead><tr><th>Medicine</th><th>Stock</th><th>Loss</th></tr></thead>
+                <tbody>${expiryLoss.items.slice(0,5).map(i => `<tr><td>${i.name}</td><td>${i.stock}</td><td>Rs. ${i.lossValue}</td></tr>`).join('')}</tbody>
+              </table>
+            ` : `<p class="text-muted">No expired stock with losses.</p>`}
+          </div>
+        `;
+      } catch (err) {
+        document.getElementById('loadingState').classList.add('hidden');
+        document.getElementById('errorMessage').textContent = err.message || 'Failed';
+        document.getElementById('errorState').classList.remove('hidden');
+      }
+    }
+
+    loadDashboard();
+  </script>
+</body>
+</html>

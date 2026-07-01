@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Track Order - MediFlow</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+  <nav class="navbar">
+    <a href="shop.html" class="navbar-brand">
+      <span class="brand-icon">+</span> MediFlow
+    </a>
+    <div class="nav-links">
+      <a href="shop.html">Shop</a>
+      <a href="cart.html" class="cart-badge">
+        Cart <span class="cart-count" style="display:none">0</span>
+      </a>
+      <a href="my-orders.html">Orders</a>
+      <a href="#" onclick="api.logout()">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container" style="padding-top:24px">
+    <div id="loadingState" class="loading-state">
+      <div class="spinner"></div>
+      <p>Loading order details...</p>
+    </div>
+    <div id="errorState" class="error-state hidden">
+      <h3>Order not found</h3>
+      <p id="errorMessage"></p>
+      <a href="my-orders.html" class="btn btn-secondary">Back to Orders</a>
+    </div>
+
+    <div id="orderContent" class="hidden">
+      <div class="flex-between mb-3">
+        <div>
+          <h2 id="orderNo"></h2>
+          <p class="text-muted" id="orderDate"></p>
+        </div>
+        <div>
+          <span class="badge" id="statusBadge" style="font-size:14px;padding:6px 16px"></span>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <h3 class="mb-2">Order Progress</h3>
+        <div class="stepper" id="stepper">
+          <div class="step" data-step="pending">
+            <div class="step-circle">1</div>
+            <div class="step-label">Pending</div>
+          </div>
+          <div class="step" data-step="confirmed">
+            <div class="step-circle">2</div>
+            <div class="step-label">Confirmed</div>
+          </div>
+          <div class="step" data-step="packed">
+            <div class="step-circle">3</div>
+            <div class="step-label">Packed</div>
+          </div>
+          <div class="step" data-step="out_for_delivery">
+            <div class="step-circle">4</div>
+            <div class="step-label">Out for Delivery</div>
+          </div>
+          <div class="step" data-step="delivered">
+            <div class="step-circle">5</div>
+            <div class="step-label">Delivered</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <h3 class="mb-2">Items</h3>
+        <table>
+          <thead><tr><th>Item</th><th>Qty</th><th>MRP</th><th>Total</th></tr></thead>
+          <tbody id="orderItems"></tbody>
+          <tfoot><tr><td colspan="3" class="text-right"><strong>Total</strong></td><td id="orderTotal"></td></tr></tfoot>
+        </table>
+      </div>
+
+      <div class="card" id="deliveryInfo">
+        <h3 class="mb-2">Delivery Address</h3>
+        <p id="deliveryAddress"></p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    if (!api.isLoggedIn()) { window.location.href = 'login.html'; return; }
+    if (api.isAdmin()) { window.location.href = '/pages/admin/dashboard.html'; return; }
+
+    const orderId = new URLSearchParams(window.location.search).get('id');
+    if (!orderId) { window.location.href = 'my-orders.html'; }
+
+    const stepOrder = ['pending', 'confirmed', 'packed', 'out_for_delivery', 'delivered'];
+    const stepLabels = { pending: 'Pending', confirmed: 'Confirmed', packed: 'Packed', out_for_delivery: 'Out for Delivery', delivered: 'Delivered' };
+    const statusColors = { pending: 'badge-amber', confirmed: 'badge-blue', packed: 'badge-blue', out_for_delivery: 'badge-amber', delivered: 'badge-green', cancelled: 'badge-red' };
+
+    let socket = null;
+
+    async function loadOrder() {
+      document.getElementById('loadingState').classList.remove('hidden');
+      document.getElementById('errorState').classList.add('hidden');
+      document.getElementById('orderContent').classList.add('hidden');
+
+      try {
+        const order = await api.get(`/api/customer/orders/${orderId}/status`);
+        renderOrder(order);
+        connectSocket(order);
+      } catch (err) {
+        document.getElementById('loadingState').classList.add('hidden');
+        document.getElementById('errorMessage').textContent = err.message || 'Order not found';
+        document.getElementById('errorState').classList.remove('hidden');
+      }
+    }
+
+    function renderOrder(order) {
+      document.getElementById('loadingState').classList.add('hidden');
+      document.getElementById('orderContent').classList.remove('hidden');
+
+      document.getElementById('orderNo').textContent = order.orderNo;
+      document.getElementById('orderDate').textContent = new Date(order.createdAt).toLocaleString('en-IN');
+
+      const badge = document.getElementById('statusBadge');
+      badge.textContent = stepLabels[order.status] || order.status;
+      badge.className = `badge ${statusColors[order.status] || 'badge-gray'}`;
+
+      const itemsTbody = document.getElementById('orderItems');
+      itemsTbody.innerHTML = order.items.map(i => `
+        <tr><td>${i.name}</td><td>${i.qty}</td><td>Rs. ${i.mrp}</td><td>Rs. ${i.lineTotal}</td></tr>
+      `).join('');
+      document.getElementById('orderTotal').textContent = `Rs. ${order.totalAmount}`;
+
+      const addr = order.deliveryAddress;
+      document.getElementById('deliveryAddress').textContent = `${addr.street}, ${addr.city}, ${addr.state} - ${addr.pincode}`;
+
+      updateStepper(order.status);
+    }
+
+    function updateStepper(status) {
+      const steps = document.querySelectorAll('.step');
+      let found = false;
+      steps.forEach(step => {
+        const s = step.dataset.step;
+        if (s === status) found = true;
+        if (found && status !== 'cancelled') {
+          step.classList.add('completed');
+          step.querySelector('.step-circle').textContent = '✓';
+        } else if (s === status) {
+          step.classList.add('active');
+        } else {
+          step.classList.remove('active', 'completed');
+        }
+      });
+
+      if (status === 'cancelled') {
+        document.querySelectorAll('.step').forEach(s => s.classList.remove('active', 'completed'));
+        const badge = document.getElementById('statusBadge');
+        badge.textContent = 'Cancelled';
+        badge.className = 'badge badge-red';
+      }
+    }
+
+    function connectSocket(order) {
+      const user = api.getUser();
+      if (!user) return;
+      try {
+        socket = io('http://localhost:5000');
+        socket.on('connect', () => {
+          socket.emit('joinRoom', user._id);
+        });
+        socket.on('orderStatusUpdate', (data) => {
+          if (data.orderId === orderId) {
+            renderOrder({ ...order, status: data.status });
+          }
+        });
+      } catch (err) {
+        console.log('Socket connection failed, polling instead.');
+      }
+    }
+
+    loadOrder();
+  </script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shop Medicines - MediFlow</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="shop.html" class="navbar-brand">
+      <span class="brand-icon">+</span> MediFlow
+    </a>
+    <div class="nav-links">
+      <a href="shop.html">Shop</a>
+      <a href="cart.html" class="cart-badge">
+        Cart <span class="cart-count" style="display:none">0</span>
+      </a>
+      <a href="my-orders.html">Orders</a>
+      <a href="#" onclick="api.logout()">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container" style="padding-top:24px">
+    <div class="search-bar">
+      <input type="text" id="searchInput" class="form-control" placeholder="Search medicines by name, brand, or generic name...">
+      <select id="categoryFilter" class="form-control">
+        <option value="">All Categories</option>
+        <option value="tablets">Tablets</option>
+        <option value="syrup">Syrup</option>
+        <option value="injection">Injection</option>
+        <option value="topical">Topical</option>
+        <option value="drops">Drops</option>
+        <option value="inhaler">Inhaler</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+
+    <div id="loadingState" class="loading-state">
+      <div class="spinner"></div>
+      <p>Loading medicines...</p>
+    </div>
+    <div id="emptyState" class="empty-state hidden">
+      <h3>No medicines found</h3>
+      <p>Try adjusting your search or filter.</p>
+    </div>
+    <div id="errorState" class="error-state hidden">
+      <h3>Something went wrong</h3>
+      <p id="errorMessage">Could not load medicines.</p>
+      <button class="btn btn-secondary" onclick="loadMedicines()">Try Again</button>
+    </div>
+    <div id="medGrid" class="grid grid-3 hidden"></div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/cart.js"></script>
+  <script>
+    if (!api.isLoggedIn()) { window.location.href = 'login.html'; return; }
+    if (api.isAdmin()) { window.location.href = '/pages/admin/dashboard.html'; return; }
+
+    let searchTimer;
+
+    document.getElementById('searchInput').addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(loadMedicines, 400);
+    });
+    document.getElementById('categoryFilter').addEventListener('change', loadMedicines);
+
+    async function loadMedicines() {
+      const grid = document.getElementById('medGrid');
+      const loading = document.getElementById('loadingState');
+      const empty = document.getElementById('emptyState');
+      const error = document.getElementById('errorState');
+
+      grid.classList.add('hidden');
+      empty.classList.add('hidden');
+      error.classList.add('hidden');
+      loading.classList.remove('hidden');
+
+      try {
+        const data = await api.get('/api/customer/medicines', {
+          search: document.getElementById('searchInput').value,
+          category: document.getElementById('categoryFilter').value,
+          limit: 50
+        });
+
+        loading.classList.add('hidden');
+
+        if (data.medicines.length === 0) {
+          empty.classList.remove('hidden');
+          return;
+        }
+
+        grid.innerHTML = data.medicines.map(m => `
+          <div class="medicine-card">
+            <h3>${m.name}</h3>
+            <div class="med-meta">${m.brand ? m.brand + ' · ' : ''}${m.genericName || ''}${m.manufacturer ? ' · ' + m.manufacturer : ''}</div>
+            <div class="med-price">Rs. ${m.mrp}</div>
+            <div class="med-meta">${m.unit}${m.packSize ? ' × ' + m.packSize : ''}</div>
+            <div class="med-stock ${m.stock <= 10 ? 'badge badge-amber' : 'badge badge-green'}">
+              ${m.stock > 0 ? 'In Stock' : 'Out of Stock'}
+            </div>
+            <button class="btn btn-primary btn-sm btn-full" onclick="addToCart('${m._id}')" ${m.stock <= 0 ? 'disabled' : ''}>
+              Add to Cart
+            </button>
+          </div>
+        `).join('');
+        grid.classList.remove('hidden');
+
+        window._medicines = {};
+        data.medicines.forEach(m => { window._medicines[m._id] = m; });
+      } catch (err) {
+        loading.classList.add('hidden');
+        document.getElementById('errorMessage').textContent = err.message || 'Failed to load';
+        error.classList.remove('hidden');
+      }
+    }
+
+    function addToCart(id) {
+      const med = window._medicines[id];
+      if (med) Cart.add(med);
+    }
+
+    loadMedicines();
+  </script>
+</body>
+</html>

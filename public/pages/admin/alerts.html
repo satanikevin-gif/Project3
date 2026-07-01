@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Alerts - MediFlow Admin</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="dashboard.html" class="navbar-brand">
+      <span class="brand-icon">+</span> MediFlow Admin
+    </a>
+    <div class="nav-links">
+      <a href="dashboard.html">Dashboard</a>
+      <a href="orders.html">Orders</a>
+      <a href="stock.html">Stock</a>
+      <a href="alerts.html">Alerts</a>
+      <a href="suppliers.html">Suppliers</a>
+      <a href="#" onclick="api.logout()">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container" style="padding-top:24px">
+    <div class="flex-between mb-3">
+      <h2>Alerts</h2>
+      <button class="btn btn-amber" onclick="triggerAlerts()">Run Alert Engine</button>
+    </div>
+
+    <div class="tab-bar">
+      <button class="tab-item active" onclick="filterAlerts('all', this)">All</button>
+      <button class="tab-item" onclick="filterAlerts('low_stock', this)">Low Stock</button>
+      <button class="tab-item" onclick="filterAlerts('expiry', this)">Expiry</button>
+      <button class="tab-item" onclick="filterAlerts('unack', this)">Unacknowledged</button>
+    </div>
+
+    <div id="loadingState" class="loading-state"><div class="spinner"></div><p>Loading alerts...</p></div>
+    <div id="emptyState" class="empty-state hidden"><h3>No alerts</h3><p>All clear — no alerts match this filter.</p></div>
+    <div id="alertsList"></div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    if (!api.isLoggedIn()) {
+      const current = encodeURIComponent('/pages/admin/alerts.html');
+      window.location.href = '/pages/customer/login.html?redirect=' + current;
+    } else if (!api.isAdmin()) {
+      window.location.href = '/pages/customer/shop.html';
+    }
+
+    let currentFilter = 'all';
+
+    function filterAlerts(type, btn) {
+      document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      currentFilter = type;
+      loadAlerts();
+    }
+
+    async function loadAlerts() {
+      document.getElementById('loadingState').classList.remove('hidden');
+      document.getElementById('emptyState').classList.add('hidden');
+
+      try {
+        const params = { limit: 100 };
+        if (currentFilter === 'low_stock') params.type = 'low_stock';
+        else if (currentFilter === 'expiry') params.type = 'expiry';
+        else if (currentFilter === 'unack') params.acknowledged = 'false';
+
+        const data = await api.get('/api/alerts', params);
+        document.getElementById('loadingState').classList.add('hidden');
+
+        if (data.alerts.length === 0) {
+          document.getElementById('emptyState').classList.remove('hidden');
+          document.getElementById('alertsList').innerHTML = '';
+          return;
+        }
+
+        const severityColors = { critical: 'badge-red', warning: 'badge-amber', info: 'badge-blue' };
+
+        document.getElementById('alertsList').innerHTML = data.alerts.map(a => `
+          <div class="card mb-2" style="${a.isAcknowledged ? 'opacity:0.6' : ''}">
+            <div class="flex-between">
+              <div>
+                <span class="badge ${severityColors[a.severity] || 'badge-gray'}">${a.severity}</span>
+                <span class="badge ${a.type === 'expiry' ? 'badge-amber' : 'badge-blue'}">${a.type}</span>
+                <strong class="ml-1">${a.medicineName}</strong>
+              </div>
+              <div class="flex gap-1">
+                ${!a.isAcknowledged ? `<button class="btn btn-secondary btn-sm" onclick="acknowledge('${a._id}')">Acknowledge</button>` : '<span class="text-muted" style="font-size:12px">Acknowledged</span>'}
+              </div>
+            </div>
+            <p class="mt-1" style="font-size:13px">${a.message}</p>
+            <p class="text-muted" style="font-size:11px">${new Date(a.createdAt).toLocaleString('en-IN')}</p>
+          </div>
+        `).join('');
+      } catch (err) {
+        document.getElementById('loadingState').classList.add('hidden');
+        document.getElementById('alertsList').innerHTML = `<div class="error-state"><h3>Failed</h3><p>${err.message}</p></div>`;
+      }
+    }
+
+    async function acknowledge(id) {
+      try {
+        await api.patch(`/api/alerts/${id}/ack`);
+        loadAlerts();
+      } catch (err) { alert(err.message); }
+    }
+
+    async function triggerAlerts() {
+      try {
+        await api.post('/api/alerts/trigger');
+        alert('Alert engine executed!');
+        loadAlerts();
+      } catch (err) { alert(err.message); }
+    }
+
+    loadAlerts();
+  </script>
+</body>
+</html>

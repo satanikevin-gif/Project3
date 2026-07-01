@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Suppliers - MediFlow Admin</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="dashboard.html" class="navbar-brand">
+      <span class="brand-icon">+</span> MediFlow Admin
+    </a>
+    <div class="nav-links">
+      <a href="dashboard.html">Dashboard</a>
+      <a href="orders.html">Orders</a>
+      <a href="stock.html">Stock</a>
+      <a href="alerts.html">Alerts</a>
+      <a href="suppliers.html">Suppliers</a>
+      <a href="#" onclick="api.logout()">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container" style="padding-top:24px">
+    <div class="flex-between mb-3">
+      <h2>Suppliers & Purchase Orders</h2>
+      <div class="flex gap-1">
+        <button class="btn btn-primary" onclick="showSupplierModal()">+ Add Supplier</button>
+        <button class="btn btn-amber" onclick="showPOModal()">+ New PO</button>
+        <button class="btn btn-secondary" onclick="showGRNModal()">+ GRN</button>
+      </div>
+    </div>
+
+    <div class="tab-bar">
+      <button class="tab-item active" onclick="showTab('suppliers', this)">Suppliers</button>
+      <button class="tab-item" onclick="showTab('pos', this)">Purchase Orders</button>
+      <button class="tab-item" onclick="showTab('grns', this)">GRN</button>
+    </div>
+
+    <div id="suppliersTab">
+      <div id="suppliersLoading" class="loading-state"><div class="spinner"></div></div>
+      <div id="suppliersList"></div>
+    </div>
+    <div id="posTab" class="hidden">
+      <div id="posLoading" class="loading-state"><div class="spinner"></div></div>
+      <div id="posList"></div>
+    </div>
+    <div id="grnsTab" class="hidden">
+      <div id="grnsLoading" class="loading-state"><div class="spinner"></div></div>
+      <div id="grnsList"></div>
+    </div>
+  </div>
+
+  <div id="supplierModal" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width:500px">
+      <div class="modal-header"><h3 id="supplierModalTitle">Add Supplier</h3><button class="modal-close" onclick="closeModal('supplierModal')">&times;</button></div>
+      <form id="supplierForm">
+        <input type="hidden" id="s_editId">
+        <div class="form-group"><label>Name *</label><input type="text" id="s_name" class="form-control" required></div>
+        <div class="form-group"><label>Company</label><input type="text" id="s_company" class="form-control"></div>
+        <div class="form-group"><label>Email *</label><input type="email" id="s_email" class="form-control" required></div>
+        <div class="form-group"><label>Phone *</label><input type="text" id="s_phone" class="form-control" required></div>
+        <div class="form-group"><label>GST Number</label><input type="text" id="s_gstNumber" class="form-control"></div>
+        <button type="submit" class="btn btn-primary btn-full">Save Supplier</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="poModal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header"><h3>Create Purchase Order</h3><button class="modal-close" onclick="closeModal('poModal')">&times;</button></div>
+      <form id="poForm">
+        <div class="form-group"><label>Supplier *</label><select id="po_supplier" class="form-control" required></select></div>
+        <div class="form-group"><label>Items (JSON: [{"medicineId":"...","medicineName":"...","quantity":10}]) *</label><textarea id="po_items" class="form-control" rows="4" required></textarea></div>
+        <div class="form-group"><label>Expected Delivery</label><input type="date" id="po_delivery" class="form-control"></div>
+        <div class="form-group"><label>Notes</label><textarea id="po_notes" class="form-control"></textarea></div>
+        <button type="submit" class="btn btn-primary btn-full">Create PO</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="grnModal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header"><h3>Create GRN</h3><button class="modal-close" onclick="closeModal('grnModal')">&times;</button></div>
+      <form id="grnForm">
+        <div class="form-group"><label>Purchase Order *</label><select id="grn_po" class="form-control" required></select></div>
+        <div class="form-group"><label>Items (JSON: [{"medicineId":"...","medicineName":"...","orderedQty":10,"receivedQty":10}]) *</label><textarea id="grn_items" class="form-control" rows="4" required></textarea></div>
+        <div class="form-group"><label>Notes</label><textarea id="grn_notes" class="form-control"></textarea></div>
+        <button type="submit" class="btn btn-primary btn-full">Create GRN</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    if (!api.isLoggedIn()) {
+      const current = encodeURIComponent('/pages/admin/suppliers.html');
+      window.location.href = '/pages/customer/login.html?redirect=' + current;
+    } else if (!api.isAdmin()) {
+      window.location.href = '/pages/customer/shop.html';
+    }
+
+    function showTab(tab, btn) {
+      document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('suppliersTab').classList.toggle('hidden', tab !== 'suppliers');
+      document.getElementById('posTab').classList.toggle('hidden', tab !== 'pos');
+      document.getElementById('grnsTab').classList.toggle('hidden', tab !== 'grns');
+      if (tab === 'suppliers') loadSuppliers();
+      if (tab === 'pos') loadPOs();
+      if (tab === 'grns') loadGRNs();
+    }
+
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    async function loadSuppliers() {
+      document.getElementById('suppliersLoading').classList.remove('hidden');
+      try {
+        const suppliers = await api.get('/api/suppliers');
+        document.getElementById('suppliersLoading').classList.add('hidden');
+        document.getElementById('suppliersList').innerHTML = suppliers.length === 0
+          ? '<div class="empty-state"><h3>No suppliers</h3></div>'
+          : `<div class="table-wrapper"><table><thead><tr><th>Name</th><th>Company</th><th>Email</th><th>Phone</th><th>GST</th><th>Actions</th></tr></thead><tbody>
+            ${suppliers.map(s => `<tr>
+              <td><strong>${s.name}</strong></td>
+              <td>${s.company || '-'}</td>
+              <td>${s.email}</td>
+              <td>${s.phone}</td>
+              <td>${s.gstNumber || '-'}</td>
+              <td><button class="btn btn-danger btn-sm" onclick="deleteSupplier('${s._id}')">Del</button></td>
+            </tr>`).join('')}
+          </tbody></table></div>`;
+      } catch (err) {
+        document.getElementById('suppliersLoading').classList.add('hidden');
+        document.getElementById('suppliersList').innerHTML = `<div class="error-state"><p>${err.message}</p></div>`;
+      }
+    }
+
+    function showSupplierModal() {
+      document.getElementById('supplierModalTitle').textContent = 'Add Supplier';
+      document.getElementById('supplierForm').reset();
+      document.getElementById('s_editId').value = '';
+      document.getElementById('supplierModal').classList.remove('hidden');
+    }
+
+    document.getElementById('supplierForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = {
+        name: document.getElementById('s_name').value,
+        company: document.getElementById('s_company').value,
+        email: document.getElementById('s_email').value,
+        phone: document.getElementById('s_phone').value,
+        gstNumber: document.getElementById('s_gstNumber').value
+      };
+      try {
+        await api.post('/api/suppliers', data);
+        closeModal('supplierModal');
+        loadSuppliers();
+      } catch (err) { alert(err.message); }
+    });
+
+    async function deleteSupplier(id) {
+      if (!confirm('Delete supplier?')) return;
+      try { await api.del(`/api/suppliers/${id}`); loadSuppliers(); }
+      catch (err) { alert(err.message); }
+    }
+
+    async function loadPOs() {
+      document.getElementById('posLoading').classList.remove('hidden');
+      try {
+        const data = await api.get('/api/suppliers/po/all', { limit: 50 });
+        document.getElementById('posLoading').classList.add('hidden');
+        const statusColors = { pending: 'badge-amber', accepted: 'badge-blue', rejected: 'badge-red', dispatched: 'badge-blue', received: 'badge-green' };
+        document.getElementById('posList').innerHTML = data.purchaseOrders.length === 0
+          ? '<div class="empty-state"><h3>No POs</h3></div>'
+          : data.purchaseOrders.map(po => `
+            <div class="card mb-2">
+              <div class="flex-between mb-1">
+                <strong>${po.poNumber}</strong>
+                <div class="flex gap-1">
+                  <span class="badge ${statusColors[po.status] || 'badge-gray'}">${po.status}</span>
+                  <span>${po.supplierId?.name || po.supplierName}</span>
+                </div>
+              </div>
+              <div class="flex gap-1">
+                <select class="form-control" style="width:auto;font-size:12px" onchange="updatePOStatus('${po._id}', this.value)">
+                  <option value="">Update Status</option>
+                  <option value="accepted">Accept</option>
+                  <option value="rejected">Reject</option>
+                  <option value="dispatched">Dispatch</option>
+                  <option value="received">Receive</option>
+                </select>
+              </div>
+              ${po.items ? `<div class="mt-1" style="font-size:13px">${po.items.map(i => `${i.medicineName} x${i.quantity}`).join(', ')}</div>` : ''}
+            </div>
+          `).join('');
+      } catch (err) {
+        document.getElementById('posLoading').classList.add('hidden');
+        document.getElementById('posList').innerHTML = `<div class="error-state"><p>${err.message}</p></div>`;
+      }
+    }
+
+    async function showPOModal() {
+      try {
+        const suppliers = await api.get('/api/suppliers');
+        const sel = document.getElementById('po_supplier');
+        sel.innerHTML = suppliers.map(s => `<option value="${s._id}">${s.name} (${s.company})</option>`).join('');
+        document.getElementById('poForm').reset();
+        document.getElementById('poModal').classList.remove('hidden');
+      } catch (err) { alert(err.message); }
+    }
+
+    document.getElementById('poForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const items = JSON.parse(document.getElementById('po_items').value);
+        await api.post('/api/suppliers/po/create', {
+          supplierId: document.getElementById('po_supplier').value,
+          items,
+          expectedDelivery: document.getElementById('po_delivery').value || undefined,
+          notes: document.getElementById('po_notes').value
+        });
+        closeModal('poModal');
+        loadPOs();
+      } catch (err) { alert(err.message || 'Invalid JSON or server error'); }
+    });
+
+    async function updatePOStatus(id, status) {
+      if (!status) return;
+      try { await api.patch(`/api/suppliers/po/${id}/status`, { status }); loadPOs(); }
+      catch (err) { alert(err.message); }
+    }
+
+    async function loadGRNs() {
+      document.getElementById('grnsLoading').classList.remove('hidden');
+      try {
+        const grns = await api.get('/api/suppliers/grn/all');
+        document.getElementById('grnsLoading').classList.add('hidden');
+        document.getElementById('grnsList').innerHTML = grns.length === 0
+          ? '<div class="empty-state"><h3>No GRNs</h3></div>'
+          : `<div class="table-wrapper"><table><thead><tr><th>PO</th><th>Supplier</th><th>Items</th><th>Date</th></tr></thead><tbody>
+            ${grns.map(g => `<tr><td>${g.poId?.poNumber || '-'}</td><td>${g.supplierId?.name || '-'}</td><td>${g.items.map(i => `${i.medicineName}: ${i.receivedQty}`).join(', ')}</td><td>${new Date(g.createdAt).toLocaleDateString('en-IN')}</td></tr>`).join('')}
+          </tbody></table></div>`;
+      } catch (err) {
+        document.getElementById('grnsLoading').classList.add('hidden');
+        document.getElementById('grnsList').innerHTML = `<div class="error-state"><p>${err.message}</p></div>`;
+      }
+    }
+
+    async function showGRNModal() {
+      try {
+        const data = await api.get('/api/suppliers/po/all');
+        const sel = document.getElementById('grn_po');
+        sel.innerHTML = data.purchaseOrders.filter(po => po.status !== 'received').map(po => `<option value="${po._id}">${po.poNumber} - ${po.supplierName}</option>`).join('');
+        document.getElementById('grnForm').reset();
+        document.getElementById('grnModal').classList.remove('hidden');
+      } catch (err) { alert(err.message); }
+    }
+
+    document.getElementById('grnForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const items = JSON.parse(document.getElementById('grn_items').value);
+        await api.post('/api/suppliers/grn/create', {
+          poId: document.getElementById('grn_po').value,
+          items,
+          notes: document.getElementById('grn_notes').value
+        });
+        closeModal('grnModal');
+        loadGRNs();
+      } catch (err) { alert(err.message || 'Invalid JSON or server error'); }
+    });
+
+    loadSuppliers();
+  </script>
+</body>
+</html>

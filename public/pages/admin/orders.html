@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manage Orders - MediFlow Admin</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="dashboard.html" class="navbar-brand">
+      <span class="brand-icon">+</span> MediFlow Admin
+    </a>
+    <div class="nav-links">
+      <a href="dashboard.html">Dashboard</a>
+      <a href="orders.html">Orders</a>
+      <a href="stock.html">Stock</a>
+      <a href="alerts.html">Alerts</a>
+      <a href="suppliers.html">Suppliers</a>
+      <a href="#" onclick="api.logout()">Logout</a>
+    </div>
+  </nav>
+
+  <div class="container" style="padding-top:24px">
+    <div class="flex-between mb-3">
+      <h2>Customer Orders</h2>
+      <select id="statusFilter" class="form-control" style="width:auto" onchange="loadOrders()">
+        <option value="">All Status</option>
+        <option value="pending">Pending</option>
+        <option value="confirmed">Confirmed</option>
+        <option value="packed">Packed</option>
+        <option value="out_for_delivery">Out for Delivery</option>
+        <option value="delivered">Delivered</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+    </div>
+
+    <div id="loadingState" class="loading-state"><div class="spinner"></div><p>Loading orders...</p></div>
+    <div id="emptyState" class="empty-state hidden"><h3>No orders</h3><p>No orders match the current filter.</p></div>
+    <div id="ordersList"></div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    if (!api.isLoggedIn()) {
+      const current = encodeURIComponent('/pages/admin/orders.html');
+      window.location.href = '/pages/customer/login.html?redirect=' + current;
+    } else if (!api.isAdmin()) {
+      window.location.href = '/pages/customer/shop.html';
+    }
+
+    const statusLabels = {
+      pending: 'Pending', confirmed: 'Confirmed', packed: 'Packed',
+      out_for_delivery: 'Out for Delivery', delivered: 'Delivered', cancelled: 'Cancelled'
+    };
+    const statusColors = {
+      pending: 'badge-amber', confirmed: 'badge-blue', packed: 'badge-blue',
+      out_for_delivery: 'badge-amber', delivered: 'badge-green', cancelled: 'badge-red'
+    };
+
+    async function loadOrders() {
+      document.getElementById('loadingState').classList.remove('hidden');
+      document.getElementById('emptyState').classList.add('hidden');
+
+      try {
+        const data = await api.get('/api/customer/orders/all', {
+          status: document.getElementById('statusFilter').value,
+          limit: 50
+        });
+        document.getElementById('loadingState').classList.add('hidden');
+
+        if (data.orders.length === 0) {
+          document.getElementById('emptyState').classList.remove('hidden');
+          document.getElementById('ordersList').innerHTML = '';
+          return;
+        }
+
+        document.getElementById('ordersList').innerHTML = data.orders.map(order => `
+          <div class="card mb-2">
+            <div class="flex-between mb-2">
+              <div>
+                <strong>${order.orderNo}</strong>
+                <span class="text-muted" style="font-size:13px;margin-left:12px">${order.customerId?.name || 'Unknown'} (${order.customerId?.email || ''})</span>
+              </div>
+              <div class="flex gap-1">
+                <span class="badge ${statusColors[order.status] || 'badge-gray'}">${statusLabels[order.status] || order.status}</span>
+                <span class="badge ${order.paymentStatus === 'paid' ? 'badge-green' : 'badge-amber'}">${order.paymentStatus}</span>
+              </div>
+            </div>
+            <table>
+              <thead><tr><th>Item</th><th>Qty</th><th>MRP</th><th>Total</th></tr></thead>
+              <tbody>${order.items.map(i => `<tr><td>${i.name}</td><td>${i.qty}</td><td>Rs. ${i.mrp}</td><td>Rs. ${i.lineTotal}</td></tr>`).join('')}</tbody>
+            </table>
+            <div class="flex-between mt-2">
+              <div class="flex gap-1">
+                <select class="form-control" style="width:auto;font-size:12px;padding:6px 10px" onchange="updateStatus('${order._id}', this.value)">
+                  <option value="">Change Status</option>
+                  <option value="confirmed">Confirm</option>
+                  <option value="packed">Pack</option>
+                  <option value="out_for_delivery">Out for Delivery</option>
+                  <option value="delivered">Deliver</option>
+                  <option value="cancelled">Cancel</option>
+                </select>
+                ${order.prescriptionUrl ? `<a href="/${order.prescriptionUrl.replace(/\\/g, '/')}" target="_blank" class="btn btn-secondary btn-sm">View Rx</a>` : ''}
+              </div>
+              <span class="text-muted" style="font-size:13px">Total: Rs. ${order.totalAmount} ${order.loyaltyPointsUsed > 0 ? `(LP: -${order.loyaltyPointsUsed})` : ''}</span>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        document.getElementById('loadingState').classList.add('hidden');
+        document.getElementById('ordersList').innerHTML = `<div class="error-state"><h3>Failed</h3><p>${err.message}</p><button class="btn btn-secondary" onclick="loadOrders()">Retry</button></div>`;
+      }
+    }
+
+    async function updateStatus(orderId, status) {
+      if (!status) return;
+      try {
+        await api.patch(`/api/customer/orders/${orderId}/status`, { status });
+        alert('Status updated!');
+        loadOrders();
+      } catch (err) {
+        alert(err.message || 'Failed to update');
+      }
+    }
+
+    loadOrders();
+  </script>
+</body>
+</html>
