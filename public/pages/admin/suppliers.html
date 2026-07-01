@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Suppliers - MediFlow Admin</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="../../css/style.css">
 </head>
 <body>
   <nav class="navbar">
@@ -91,13 +91,12 @@
     </div>
   </div>
 
-  <script src="/js/api.js"></script>
+  <script src="../../js/api.js"></script>
   <script>
     if (!api.isLoggedIn()) {
-      const current = encodeURIComponent('/pages/admin/suppliers.html');
-      window.location.href = '/pages/customer/login.html?redirect=' + current;
+      api.goToLogin('suppliers.html');
     } else if (!api.isAdmin()) {
-      window.location.href = '/pages/customer/shop.html';
+      window.location.href = api.pageUrl('customer/shop.html');
     }
 
     function showTab(tab, btn) {

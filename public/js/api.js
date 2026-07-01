@@ -1,4 +1,6 @@
-const BASE_URL = 'http://localhost:5000';
+const BASE_URL = window.location.protocol === 'file:'
+  ? 'http://localhost:5000'
+  : window.location.origin;
 
 const api = {
   async request(endpoint, options = {}) {
@@ -18,11 +20,21 @@ const api = {
       delete headers['Content-Type'];
     }
 
-    const config = { ...options, headers, body };
+    const config = {
+      credentials: 'include',
+      ...options,
+      headers,
+      body
+    };
 
     try {
       const res = await fetch(`${BASE_URL}${endpoint}`, config);
-      const data = await res.json();
+      let data = {};
+      try {
+        data = await res.json();
+      } catch {
+        data = { message: res.statusText || 'Unexpected server response.' };
+      }
 
       if (!res.ok) {
         if (res.status === 401 && data.code === 'TOKEN_EXPIRED') {
@@ -40,7 +52,10 @@ const api = {
       return data;
     } catch (error) {
       if (error.status) throw error;
-      throw { message: 'Network error. Please check your connection.', status: 0 };
+      throw {
+        message: 'Cannot reach server. Start the app with npm start, then open http://localhost:5000',
+        status: 0
+      };
     }
   },
 
@@ -88,7 +103,7 @@ const api = {
     localStorage.removeItem('mediflow_user');
     localStorage.removeItem('mediflow_cart');
     this.post('/api/auth/logout').catch(() => { });
-    window.location.href = '/pages/customer/login.html';
+    window.location.href = this.pageUrl('customer/login.html');
   },
 
   getUser() {
@@ -111,5 +126,78 @@ const api = {
   isAdmin() {
     const u = this.getUser();
     return u && u.role === 'admin';
+  },
+
+  getPageArea() {
+    const loc = decodeURIComponent(window.location.href).replace(/\\/g, '/').toLowerCase();
+    if (loc.includes('/pages/admin/')) return 'admin';
+    if (loc.includes('/pages/supplier/')) return 'supplier';
+    if (loc.includes('/pages/customer/')) return 'customer';
+    return 'root';
+  },
+
+  pageUrl(target) {
+    let path = String(target || '');
+    if (path.startsWith('/pages/')) path = path.slice('/pages/'.length);
+    else if (path.startsWith('/')) path = path.slice(1);
+    else if (path.startsWith('../')) path = path.slice(3);
+
+    if (!path.endsWith('.html')) path += '.html';
+
+    const parts = path.split('/');
+    let area;
+    let file;
+    if (parts.length >= 2) {
+      area = parts[0];
+      file = parts.slice(1).join('/');
+    } else {
+      area = 'customer';
+      file = parts[0];
+    }
+
+    const current = this.getPageArea();
+    if (current === area) return file;
+    if (current === 'root') return `pages/${area}/${file}`;
+    return `../${area}/${file}`;
+  },
+
+  resolveRedirect(redirectParam) {
+    if (!redirectParam) return null;
+    if (redirectParam.startsWith('/pages/')) return '..' + redirectParam.slice('/pages'.length);
+    if (redirectParam.startsWith('pages/')) return '../' + redirectParam.slice('pages/'.length);
+    return redirectParam;
+  },
+
+  goToLogin(returnPage) {
+    const area = this.getPageArea();
+    let redirectFromCustomer;
+    if (returnPage.includes('/')) {
+      redirectFromCustomer = '../' + returnPage.replace(/^\/+/, '');
+    } else if (area === 'admin' || area === 'supplier') {
+      redirectFromCustomer = `../${area}/${returnPage}`;
+    } else {
+      redirectFromCustomer = returnPage;
+    }
+    if (!redirectFromCustomer.endsWith('.html')) redirectFromCustomer += '.html';
+    window.location.href = this.pageUrl('customer/login.html')
+      + '?redirect=' + encodeURIComponent(redirectFromCustomer);
+  },
+
+  goAfterLogin(role, redirectParam) {
+    const redirect = this.resolveRedirect(redirectParam);
+    if (redirect) {
+      const isAdminTarget = redirect.includes('admin');
+      if (isAdminTarget && role !== 'admin') {
+        window.location.href = role === 'supplier'
+          ? this.pageUrl('supplier/dashboard.html')
+          : this.pageUrl('customer/shop.html');
+        return;
+      }
+      window.location.href = redirect;
+      return;
+    }
+    if (role === 'admin') window.location.href = this.pageUrl('admin/dashboard.html');
+    else if (role === 'supplier') window.location.href = this.pageUrl('supplier/dashboard.html');
+    else window.location.href = this.pageUrl('customer/shop.html');
   }
 };

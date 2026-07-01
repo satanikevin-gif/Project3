@@ -5,7 +5,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Login - MediFlow</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="../../css/style.css">
 </head>
 
 <body>
@@ -24,87 +24,83 @@
           <label for="password">Password</label>
           <input type="password" id="password" class="form-control" placeholder="Enter your password" required>
         </div>
+        <p id="loginError" style="display:none;margin-bottom:12px;color:var(--red);font-size:14px"></p>
         <button type="submit" class="btn btn-primary btn-full">Sign In</button>
       </form>
       <div class="auth-footer">
         <p>Don't have an account? <a href="register.html">Register</a></p>
-        <p class="mt-1"><a href="#" onclick="forgotPassword()">Forgot password?</a></p>
+        <p class="mt-1"><a href="#" id="forgotPasswordLink">Forgot password?</a></p>
       </div>
     </div>
   </div>
 
-  <script src="/js/api.js"></script>
+  <script src="../../js/api.js"></script>
   <script>
-    const redirectUrl = new URLSearchParams(window.location.search).get('redirect');
+    document.addEventListener('DOMContentLoaded', () => {
+      const redirectUrl = new URLSearchParams(window.location.search).get('redirect');
+      const loginForm = document.getElementById('loginForm');
+      const loginError = document.getElementById('loginError');
+      const submitBtn = loginForm.querySelector('button[type="submit"]');
 
-    let user = null;
-    try {
-      user = api.getUser();
-    } catch (error) {
-      console.warn('Unable to read saved user:', error);
-    }
-
-    if (user) {
-      if (redirectUrl) {
-        if (redirectUrl.includes('/admin/') && user.role !== 'admin') {
-          window.location.href = user.role === 'supplier' ? '/pages/supplier/dashboard.html' : 'shop.html';
-        } else {
-          window.location.href = redirectUrl;
-        }
-      } else if (user.role === 'admin') {
-        window.location.href = '/pages/admin/dashboard.html';
-      } else if (user.role === 'supplier') {
-        window.location.href = '/pages/supplier/dashboard.html';
-      } else {
-        window.location.href = 'shop.html';
+      function showError(message) {
+        loginError.textContent = message;
+        loginError.style.display = message ? 'block' : 'none';
       }
-      return;
-    }
 
-    const loginForm = document.getElementById('loginForm');
-    if (loginForm) {
+      function goAfterLogin(role) {
+        api.goAfterLogin(role, redirectUrl);
+      }
+
+      const savedUser = api.getUser();
+      if (savedUser && api.isLoggedIn()) {
+        goAfterLogin(savedUser.role);
+        return;
+      }
+
       loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const btn = e.target.querySelector('button');
-        btn.disabled = true; btn.textContent = 'Signing in...';
+        showError('');
+
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+
+        if (!email || !password) {
+          showError('Please enter email and password.');
+          return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Signing in...';
+
         try {
-          const data = await api.post('/api/auth/login', {
-            email: document.getElementById('email').value,
-            password: document.getElementById('password').value
-          });
+          const data = await api.post('/api/auth/login', { email, password });
+
+          if (!data.accessToken || !data.user) {
+            throw { message: 'Invalid response from server.' };
+          }
+
           localStorage.setItem('mediflow_token', data.accessToken);
           localStorage.setItem('mediflow_user', JSON.stringify(data.user));
-          if (redirectUrl) {
-            if (redirectUrl.includes('/admin/') && data.user.role !== 'admin') {
-              window.location.href = data.user.role === 'supplier' ? '/pages/supplier/dashboard.html' : 'shop.html';
-            } else {
-              window.location.href = redirectUrl;
-            }
-          } else if (data.user.role === 'admin') {
-            window.location.href = '/pages/admin/dashboard.html';
-          } else if (data.user.role === 'supplier') {
-            window.location.href = '/pages/supplier/dashboard.html';
-          } else {
-            window.location.href = 'shop.html';
-          }
+          goAfterLogin(data.user.role);
         } catch (err) {
-          alert(err.message || 'Login failed');
-        } finally {
-          btn.disabled = false; btn.textContent = 'Sign In';
+          showError(err.message || 'Login failed. Please try again.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Sign In';
         }
       });
-    }
 
-    async function forgotPassword() {
-      const email = prompt('Enter your email:');
-      if (!email) return;
-      try {
-        await api.post('/api/auth/forgot-password', { email });
-        alert('OTP sent to your email.');
-      } catch (err) {
-        alert(err.message || 'Failed to send OTP');
-      }
-    }
+      document.getElementById('forgotPasswordLink').addEventListener('click', async (e) => {
+        e.preventDefault();
+        const email = prompt('Enter your email:');
+        if (!email) return;
+        try {
+          await api.post('/api/auth/forgot-password', { email: email.trim() });
+          alert('OTP sent to your email.');
+        } catch (err) {
+          alert(err.message || 'Failed to send OTP');
+        }
+      });
+    });
   </script>
 </body>
 
