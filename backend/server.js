@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -55,13 +55,17 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+const staticCacheOptions = process.env.NODE_ENV === 'production' ? { maxAge: '1d' } : { maxAge: 0, etag: false, lastModified: false };
+
 // Serve a simple SVG favicon for browsers that request /favicon.ico
 app.get('/favicon.ico', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'favicon.svg'));
 });
 
-// Serve static files with cache disabled in development so login page updates are picked up immediately
-const staticCacheOptions = process.env.NODE_ENV === 'production' ? { maxAge: '1d' } : { maxAge: 0, etag: false, lastModified: false };
+// Serve uploaded files (prescriptions, invoices)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), staticCacheOptions));
+
+// Serve legacy static HTML (optional — React app runs separately on port 5173)
 app.use(express.static(path.join(__dirname, '..', 'public'), staticCacheOptions));
 
 app.use('/api/auth', authRoutes);
@@ -92,3 +96,8 @@ connectDB().then(() => {
 });
 
 module.exports = { app, server };
+
+
+
+// netstat -ano | findstr :5000
+// taskkill /PID <pid> /F
